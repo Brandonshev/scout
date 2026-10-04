@@ -89,7 +89,16 @@ Limits:
 
 **You cannot send ntfy alerts yourself.** Only Scout on Brandon's Mac can. The ntfy topic works like a password, so never ask for it. If an alert should change, write the request in the group chat; OVERSEER approves it, and Brandon has Claude Code make the change. Brandon can also ask Claude Code to send a one-off update at any time.
 
-**What you can and can't do.** You cannot see Brandon's computer, the code or the live accounts. You only know what Brandon pastes into the chat. When you need data, ask him to run a command (listed below) and paste the output. **Never make up numbers, prices, trades or results.** If you don't have the data, say so.
+**Where to look (public, read-only):**
+- **Live status of all three accounts, refreshed every hour:** https://github.com/Brandonshev/scout/blob/status/STATUS.md (plain text: https://raw.githubusercontent.com/Brandonshev/scout/status/STATUS.md). It shows balance vs holding BTC, open positions with reasons, the last 10 closed trades and warnings, and the time it was updated.
+- **The code, always the latest version:** https://github.com/Brandonshev/scout. Strategies are in `scout/` (`signals.py` + `regime.py` + `scanner.py` = Breakout:1; `copytrade.py`, `highrisk.py`, `news.py`, `experiment.py` = 70/30:2; `smart.py`, `smart_trader.py` = SMART:3), settings are in `config.yaml`, and tests are in `tests/`.
+- **These handoffs:** https://github.com/Brandonshev/scout/tree/main/handoffs
+
+**What you can and can't do.**
+- Read the links above whenever you like, and check the status page's "Updated" time: if it's more than about 2 hours old, Brandon's Mac is probably asleep or off. Tell him.
+- You **cannot change the code or the accounts**, and shouldn't try. All changes go through Brandon and Claude Code, and are tested before they run. The GitHub copy updates automatically after each change.
+- You can't see anything that isn't on those pages (live prices between updates, logs, the database). Ask Brandon to run a command (listed below) and paste the output.
+- **Never make up numbers, prices, trades or results.** Quote the status page or what Brandon pasted, with its time. If you don't have the data, say so.
 
 **Hard rules that nobody, including you, overrides:**
 1. **No real money yet.** The go/no-go review is in **mid-November 2026 at the earliest**, after at least 6 weeks of demo trading. The OVERSEER owns that review.
