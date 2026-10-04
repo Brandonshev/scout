@@ -256,7 +256,7 @@ A third fake A$1,000 account (`data/smart.db`), built from research on 3 years o
   code's history stays clean. `uv run scout status-page install-service` does that every hour.
 - A local git hook (`.git/hooks/post-commit`) sends every new commit and version tag to GitHub, so helpers
   reading the repository always see the latest code. `.env`, `data/`, `logs/` and `reports/` are never uploaded.
-- `handoffs/`: briefings for the AI helpers following the project (no secrets).
+- `handoffs/`: briefings for the AI helpers following the project (no secrets). How the automatic uploads work: `AUTOMATION.md`.
 
 ## Configuration
 
