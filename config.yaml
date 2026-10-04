@@ -1,0 +1,284 @@
+# Scout configuration.
+# Check it with:  uv run scout config-check
+# Secrets go in .env, never here. Relative paths are relative to this file.
+# Times MUST be in quotes ("20:00") — unquoted, YAML reads 20:00 as the number 1200.
+
+# demo   = fake money, real live prices (default)
+# replay = fake money, past prices, played back quickly
+# live   = real money. Cannot be enabled yet — it arrives in v1.0.0 at the earliest.
+mode: demo
+
+app:
+  timezone: Australia/Sydney        # everything is stored in UTC, shown in this timezone
+  db_path: data/scout.db
+  log_dir: logs
+  reports_dir: reports              # charts and exports
+  backup_dir: data/backups          # a copy of the database is saved here once a day...
+  backup_keep_days: 14              # ...and the last 14 are kept
+  log_level: INFO                   # DEBUG shows more detail, WARNING shows less
+  log_max_bytes: 5000000            # start a new log file after ~5 MB...
+  log_backup_count: 10              # ...and keep the last 10
+
+demo:
+  name: "Breakout:1"                # the main demo's name in alerts and reports
+  starting_balance_aud: 1000
+  # Hyperliquid accounts are in USDC (a "stablecoin" worth ~US$1).
+  # AUD→USD rate (RBA said 0.7023 on 28 Sep 2026). `scout doctor` warns when it drifts 3%+.
+  aud_to_usdc_rate: 0.70
+  tick_seconds: 5                   # check stops and the account every 5 seconds
+  snapshot_minutes: 5               # save the account value every 5 minutes
+  cycle_minutes: 60                 # mood -> scan -> signals every hour (just after each hour)
+
+data:
+  api_url: https://api.hyperliquid.xyz/info
+  ws_url: wss://api.hyperliquid.xyz/ws
+  timeframes: ["1h", "4h"]          # candle sizes we download
+  request_timeout_seconds: 10
+  # If Scout hasn't run for this long (e.g. the Mac was asleep), it must
+  # resync prices and positions before doing anything else.
+  stale_after_seconds: 300
+  # Hyperliquid allows 1200 "weight" per minute per internet connection.
+  # We use less, leaving room for anything else on your network.
+  weight_per_minute: 800
+  max_retries: 5                    # retries (with growing waits) before giving up on a request
+  # Default history download for `scout fetch --top N`.
+  # Note: Hyperliquid only keeps the latest 5000 candles per coin and size, so
+  # 365 days is only reachable for 4h and 1d (≈208 days of 1h, ≈52 days of 15m).
+  backfill_intervals: ["15m", "1h", "4h", "1d"]
+  backfill_days: 365
+  backfill_top_coins: 10
+
+# Market mood: RISK_ON / NEUTRAL / RISK_OFF plus a volatility label (calm / normal / wild).
+# Uses daily candles. Rules for later steps: RISK_OFF = no new long trades;
+# wild volatility = position sizes multiplied by wild_volatility_size_multiplier.
+regime:
+  benchmark_coin: BTC               # Bitcoin leads the crypto market
+  update_minutes: 60                # how often `scout mood --watch` re-checks
+
+  # Trend: Bitcoin's price vs its moving averages (average close of the last N days).
+  # Each check scores +1 / -1: price above/below the 50-day, above/below the 200-day,
+  # and each average rising (+1), flat (0) or falling (-1) over slope_days.
+  fast_ma_days: 50
+  slow_ma_days: 200
+  slope_days: 10
+  slope_flat_pct: 0.25              # an average moving less than ±0.25% in slope_days counts as flat
+
+  # Breadth: % of the top coins (by volume) trading above their own 50-day average.
+  breadth_top_coins: 30
+  breadth_ma_days: 50
+  breadth_min_coins: 10             # fewer coins with enough history than this = breadth unknown
+  breadth_strong_pct: 60            # ≥ 60% = broad strength   → +breadth_weight points
+  breadth_weak_pct: 40              # ≤ 40% = only a few rising → -breadth_weight points
+  breadth_weight: 2                 # breadth counts double: it shows if the whole market agrees
+  history_candidate_coins: 50       # pool for past breadth (ranked by volume at the time)
+
+  # Volatility: BTC's average true range (ATR) as a % of price, vs the past year.
+  atr_days: 14
+  volatility_history_days: 365
+  calm_percentile: 25               # quieter than 75% of the past year = calm
+  wild_percentile: 80               # wilder than 80% of the past year  = wild
+
+  # Crowding: average funding rate of the top coins, as a yearly %.
+  crowded_funding_annual_pct: 30    # above this, too many traders are betting on a rise → -1 point
+
+  # Verdict from the total points
+  risk_on_min_score: 3              # ≥ 3 points = RISK_ON
+  risk_off_max_score: -3            # ≤ -3 points = RISK_OFF, anything between = NEUTRAL
+  require_btc_above_slow_ma_for_risk_on: true   # never RISK_ON while Bitcoin is below its 200-day
+
+  wild_volatility_size_multiplier: 0.5          # half-size positions when volatility is wild
+
+# Coin scanner: which coins are worth trading right now.
+scanner:
+  update_minutes: 60                # how often `scout scan --watch` re-scans
+
+  # Universe and hard filters (a coin failing any of these is excluded, with the reason saved)
+  universe_size: 25                 # look at the 25 coins with the highest 24h volume...
+  max_coins: 10                     # ...and shortlist the best 10...
+  min_score: 0                      # ...but only coins scoring 0 or more (weak coins stay off on quiet days)
+  min_24h_volume_usd: 20000000      # heavily traded = easy to buy/sell at a fair price
+  min_open_interest_usd: 10000000   # money in open bets; tiny = easy to push around
+  min_listing_days: 60              # new listings are wild and have too little history
+  max_spread_pct: 0.10              # gap between best buy and sell price, as % of price
+  depth_band_pct: 1.0               # measure order-book depth within ±1% of the price...
+  min_depth_usd: 100000             # ...and require at least US$100k on each side
+  stablecoins: [USDC, USDT, USDE, USDH, USD1, DAI, FDUSD, PYUSD, TUSD, USDS]   # pegged to $1: nothing to trade
+  exclude_coins: []                 # anything else you never want traded
+
+  # Measurements
+  rs_short_days: 7                  # relative strength vs BTC over a week...
+  rs_long_days: 30                  # ...and a month
+  rs_threshold_pct: 1.0             # beat/lag BTC by more than 1 percentage point to count
+  volume_avg_days: 20               # "normal" volume = average of the last 20 days
+  volume_surge_ratio: 1.5           # 1.5× normal or more = surge (people are paying attention)
+  volume_dry_ratio: 0.5             # half of normal or less = drying up
+  fast_ma_days: 20                  # trend: price vs its 20- and 50-day averages
+  slow_ma_days: 50
+  atr_days: 14
+  high_volatility_atr_pct: 8.0      # moving more than 8% a day on average = very jumpy
+
+  # Score = sum of (points × weight). Points are +1 / 0 / -1 per check (trend: -2…+2).
+  weights:
+    rs_short: 1.0
+    rs_long: 1.0
+    volume: 0.5
+    trend: 1.0
+    volatility: 1.0
+
+# Trade signals: entries only for shortlisted coins, only when the market mood allows.
+signals:
+  strategy: breakout                # which strategy class to use (more can be added later)
+  allow_shorts: false               # betting on falls. Only ever with fake money; see README.
+  timeframe: 4h                     # candles used for breakouts, stops and exits
+
+  # "Uptrend" = price above its 20- and 50-day averages (daily candles)
+  trend_fast_ma_days: 20
+  trend_slow_ma_days: 50
+
+  # Entry: a 4h candle CLOSES above the highest high of the previous 20 candles (~3.3 days)...
+  breakout_periods: 20
+  volume_avg_periods: 20
+  min_volume_ratio: 1.2             # ...on at least 1.2× its average volume...
+  rsi_periods: 14
+  max_rsi: 75                       # ...and RSI at or below 75 (not wildly overextended)
+  min_rsi_short: 25                 # mirror rule for shorts
+
+  # Stops and exits
+  atr_periods: 14
+  stop_atr_multiple: 2.0            # first stop loss: 2 × ATR below the entry price
+  trail_atr_multiple: 3.0           # trailing stop: 3 × ATR below the highest price since entry
+  exit_ma_periods: 20               # also exit when a 4h candle closes below its 20-candle average
+  max_stop_pct: 10.0                # skip trades whose stop would be more than 10% away
+  candles_needed_days: 30           # 4h history to keep downloaded per coin
+
+risk:                               # the most important section: every order passes these checks
+  risk_per_trade_pct: 1.0           # lose at most 1% of the account if a stop loss is hit
+  max_position_pct: 25.0            # never put more than 25% of the account in one coin
+  max_open_positions: 3
+  max_total_exposure_pct: 75.0      # all positions together: at most 75% of the account
+  stale_price_seconds: 60           # no new trades if the latest price is older than this
+  daily_loss_limit_pct: 3.0         # stop opening trades for the day after losing 3%
+  kill_switch_drawdown_pct: 15.0    # stop EVERYTHING if the account falls 15% from its peak
+  max_leverage: 1.0                 # 1 = no borrowed money. Cannot be set higher.
+  # Costs paid on every trade (Hyperliquid base tier — verify occasionally)
+  taker_fee_pct: 0.045
+  maker_fee_pct: 0.015
+  slippage_pct: 0.05                # allowance for getting a slightly worse price than expected
+  min_order_usd: 10                 # Hyperliquid's minimum order size
+
+# Running unattended: `scout service install` starts `scout demo` at login and restarts it if it crashes.
+service:
+  label: au.scout.demo
+  keep_awake: true                  # stop the Mac sleeping while Scout runs (only on mains power; lid open)
+  restart_alert: true               # iMessage when Scout starts again after a stop or crash
+  crash_loop_restarts: 5            # 5 starts within an hour = something is badly wrong...
+  crash_loop_pause_minutes: 15      # ...so wait 15 minutes before trying again (and tell you)
+
+# Tax export: daily AUD/USD rates from the Reserve Bank of Australia (free, no account needed).
+tax:
+  fx_url: https://www.rba.gov.au/statistics/tables/csv/f11.1-data.csv
+
+# Backtester: replays the whole pipeline over past candles. Fees and slippage are taken
+# from the risk section above, so the test pays the same costs the live bot would.
+backtest:
+  # Hyperliquid's past funding is expensive to download, so a flat rate is assumed.
+  # 0.002% per hour ≈ 17.5% a year: above the 11% baseline, because longs pay more in rallies.
+  funding_rate_hourly_pct: 0.002
+  warmup_days: 30                   # 4h history needed before the first trade
+
+  # Walk-forward: pick settings on a training period, then test them on the next, unseen period.
+  walk_forward:
+    train_days: 180
+    test_days: 90
+    min_trades: 5                   # settings with fewer training trades are ignored
+    grid:                           # combinations of signals settings to try (3 × 3 = 9)
+      breakout_periods: [10, 20, 40]
+      stop_atr_multiple: [1.5, 2.0, 3.0]
+
+# iMessage updates to your iPhone, sent by the Messages app on this Mac (one-way).
+# Put your number in .env:  SCOUT_NOTIFY__IMESSAGE_RECIPIENT="+614XXXXXXXX"
+# Then test with:            uv run scout notify-test
+notify:
+  ntfy_enabled: true               # push alerts via the free ntfy iPhone app: run `uv run scout ntfy-setup`
+  ntfy_server: https://ntfy.sh
+  imessage_enabled: false           # iMessage alerts (optional; see README). Turn on after `scout notify-test` works
+  update_times: ["08:00", "20:00"]  # every account sends an update at these times
+  quiet_hours_start: "23:00"        # nothing is sent 23:00–07:00 except the kill switch;
+  quiet_hours_end: "07:00"          # what waited arrives at 07:00 as one message
+  batch_minutes: 60                 # minor updates (e.g. stop moves) bundled into one message per hour
+  weekly_report_day: sunday         # the weekly report: performance vs BTC and an honest verdict
+  weekly_report_time: "19:00"
+  min_seconds_between: 10           # at most one message every 10 seconds...
+  max_per_hour: 20                  # ...and 20 an hour; any backlog is merged into one digest
+  retry_attempts: 3                 # tries per message before giving up (logged)
+  retry_seconds: 30                 # wait between tries (doubles each time)
+  feed_down_seconds: 120            # warn if live prices stop for this long
+  max_length: 600                   # longer messages are shortened
+
+# EXPERIMENT: a separate fake A$1,000 account beside the main demo, testing two ideas:
+#   copy trading (follow wallets whose own recent trades were consistently profitable) and
+#   high-risk small coins (sudden volume + price bursts; expect most of these to lose).
+# No per-trade stop losses: copied trades close when the wallet closes; high-risk trades close at
+# the profit target or the time limit. Leverage stays 1x; one trade can use at most max_trade_pct.
+# Run it with `uv run scout experiment run` (or `scout experiment install-service`).
+experiment:
+  name: "70/30:2"                  # its name in alerts and reports
+  db_path: data/experiment.db
+  starting_balance_aud: 1000
+  copy_pct: 70                      # share of the account for copy trading...
+  high_risk_pct: 30                 # ...and for high-risk coins
+  max_trade_pct: 10                 # no single position bigger than 10% of the account
+  kill_switch_drawdown_pct: 50      # last resort: close everything if the account halves
+  wallet_refresh_hours: 24          # re-pick the wallets to follow once a day
+  copy_trading:
+    wallets: 10                     # follow the best 10 wallets...
+    poll_seconds: 20                # ...checking their positions every 20 seconds
+    min_account_usd: 100000
+    lookback_days: 30               # judge wallets on their last 30 days of real trades
+    candidates: 60
+    min_closing_trades: 10          # at least 10 closed trades to judge
+    max_fills: 2000                 # more trades than this = a market-making bot: not copyable
+    min_profit_factor: 1.3          # money won ÷ money lost
+    max_open_loss_pct: 10           # skip wallets hiding losses in positions they haven't closed
+    position_pct: 7                 # each copied position = 7% of the account
+    min_wallet_position_pct: 2      # ignore tiny positions (under 2% of the wallet's account)
+    allow_shorts: true              # also copy their bets on falls (fake money only)
+  high_risk:
+    scan_minutes: 15
+    include_spot: true              # Hyperliquid spot tokens
+    include_perps: true             # low-volume perps outside the main scanner
+    min_volume_usd: 20000
+    max_volume_usd: 2000000
+    min_change_pct: 15              # up at least 15% in 24h...
+    volume_surge: 3                 # ...on at least 3x its usual volume (when known)
+    min_exit_depth_usd: 1000        # at least US$1,000 of buyers within 5%, so we can sell
+    max_spread_pct: 3
+    position_pct: 6
+    take_profit_pct: 50             # sell at +50%...
+    max_hold_hours: 48              # ...or after 48 hours, whichever comes first
+
+# SMART:3: a third fake account. Half follows Bitcoin's trend (hold BTC above its 50-day average,
+# cash below); the other half ranks the 40 most-traded coins daily on six researched measures and
+# holds the best 6 / shorts the worst 6. See `uv run scout smart backtest`.
+smart:
+  name: "SMART:3"
+  db_path: data/smart.db
+  starting_balance_aud: 1000
+  btc_pct: 50                       # the Bitcoin-trend half
+  long_pct: 25                      # spread over the 6 best-ranked coins
+  short_pct: 25                     # spread over the 6 worst-ranked coins (fake money only)
+  picks: 6
+  keep_within: 12                   # keep a coin while it stays in the best (or worst) 12
+  stop_atr: 5                       # wide safety stop: 5 days' typical range away
+  rebalance_after_utc: "00:10"      # after the daily candle closes (10:10am, or 11:10am in daylight saving)
+  kill_switch_drawdown_pct: 30
+
+# Free crypto news headlines (RSS). The experiment uses them as a safety check:
+# a serious headline about a coin (hack, exploit, rug pull, delisting...) blocks buying it and
+# sells a long we hold. Other headlines are only quoted in trade reasons. The main demo ignores news.
+news:
+  enabled: true
+  refresh_minutes: 10               # check the feeds every 10 minutes
+  lookback_hours: 48                # a warning counts for 48 hours
+  # feeds: [{name: CoinDesk, url: "https://..."}]   (defaults: CoinDesk, Cointelegraph, Decrypt,
+  #                                                    The Block, Bitcoin Magazine)

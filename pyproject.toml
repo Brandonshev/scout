@@ -1,0 +1,44 @@
+[project]
+name = "scout"
+dynamic = ["version"]
+description = "Scout: an explainable, risk-first crypto trading bot (demo mode by default)."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.3",
+    "pandas>=3.0.6",
+    "pydantic>=2.8",
+    "pydantic-settings[yaml]>=2.4",
+    "rich>=15.0.0",
+    "streamlit>=1.59.2",
+    "typer>=0.12",
+    "websockets>=17.1",
+]
+
+[project.scripts]
+scout = "scout.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.16.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# The version lives in exactly one place: scout/version.py
+[tool.hatch.version]
+path = "scout/version.py"
+pattern = "APP_VERSION = \"(?P<version>[^\"]+)\""
+
+# Reinstall the package whenever the version is bumped, so metadata stays in step.
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { file = "scout/version.py" }]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
